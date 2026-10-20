@@ -1,0 +1,16 @@
+[Unit]
+Description=Drop double-registered key presses on the Compx Hydra 10 keyboard
+After=systemd-udevd.service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/chatter-fix --keys KEY_E --threshold-ms 50
+Restart=on-failure
+RestartSec=2
+Nice=-5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
