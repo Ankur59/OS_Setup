@@ -7,7 +7,8 @@ python3 -c "import evdev" || apt-get install -y python3-evdev
 install -m 755 chatter-fix.py /usr/local/bin/chatter-fix
 install -m 644 chatter-fix.service /etc/systemd/system/chatter-fix.service
 systemctl daemon-reload
-systemctl enable --now chatter-fix.service
+systemctl enable chatter-fix.service
+systemctl restart chatter-fix.service
 sleep 1
 systemctl --no-pager status chatter-fix.service | head -15
 echo

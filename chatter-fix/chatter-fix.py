@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
 chatter-fix: drop the phantom second press of a key that "chatters"
-(registers twice) on the Compx Hydra 10 wireless keyboard.
+(registers twice) on the Hydra 10 keyboard, wireless or wired.
 
 How it works
-  * Finds the keyboard's input devices by USB id (3554:fa09).
+  * Finds the keyboard's input devices by USB id: 3554:fa09 ("Compx
+    Hydra 10", 2.4 GHz dongle) or 258a:010c ("BY Tech Hydra 10", cable).
   * Grabs them exclusively and re-emits every event through a virtual
     keyboard (uinput), so the rest of the system sees a normal keyboard.
   * For the chosen keys only (default: E), a press that arrives within
@@ -35,8 +36,10 @@ import time
 import evdev
 from evdev import InputDevice, UInput, ecodes
 
-VENDOR = 0x3554   # Compx
-PRODUCT = 0xFA09  # Hydra 10
+KEYBOARD_IDS = {
+    (0x3554, 0xFA09),  # Compx Hydra 10 (2.4 GHz dongle)
+    (0x258A, 0x010C),  # BY Tech Hydra 10 (wired)
+}
 VIRTUAL_NAME_PREFIX = "chatter-fix: "
 RESCAN_SECONDS = 2.0
 KEY_PRESS, KEY_RELEASE = 1, 0
@@ -137,7 +140,7 @@ def find_keyboard_devices(keys):
         except OSError:
             continue
         info = dev.info
-        if (info.vendor == VENDOR and info.product == PRODUCT
+        if ((info.vendor, info.product) in KEYBOARD_IDS
                 and not dev.name.startswith(VIRTUAL_NAME_PREFIX)
                 and keys & set(dev.capabilities().get(ecodes.EV_KEY, []))):
             found.append(dev)
@@ -218,7 +221,7 @@ def run_filter(keys, threshold_s):
 def run_monitor(keys):
     devices = find_keyboard_devices(keys)
     if not devices:
-        sys.exit("Hydra 10 keyboard not found (is the dongle plugged in?)")
+        sys.exit("Hydra 10 keyboard not found (is the dongle or cable plugged in?)")
     sel = selectors.DefaultSelector()
     for dev in devices:
         sel.register(dev, selectors.EVENT_READ)

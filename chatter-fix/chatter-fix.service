@@ -1,5 +1,5 @@
 [Unit]
-Description=Drop double-registered key presses on the Compx Hydra 10 keyboard
+Description=Drop double-registered key presses on the Hydra 10 keyboard (wireless and wired)
 After=systemd-udevd.service
 
 [Service]

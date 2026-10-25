@@ -1,8 +1,9 @@
 # chatter-fix
 
-Drops the phantom second press of the **E** key on the Compx Hydra 10
-wireless keyboard (USB id `3554:fa09`), which sometimes registers one
-press twice ("key chatter").
+Drops the phantom second press of the **E** key on the Hydra 10
+keyboard, which sometimes registers one press twice ("key chatter").
+Works in both modes: 2.4 GHz dongle (`3554:fa09`, "Compx Hydra 10") and
+wired (`258a:010c`, "BY Tech Hydra 10").
 
 A press of E that arrives within 50 ms of the previous E release is
 treated as chatter and dropped. Real double presses ("seen", "free") are
