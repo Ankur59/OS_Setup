@@ -6,7 +6,7 @@ chatter-fix: drop the phantom second press of a key that "chatters"
 How it works
   * Finds the keyboard's input devices by USB id: 3554:fa09 ("Compx
     Hydra 10", 2.4 GHz dongle) or 258a:010c ("BY Tech Hydra 10", cable).
-  * Grabs them exclusively and re-emits every event through a virtual
+  * Grabs them exclusively and re-emits key events through a virtual
     keyboard (uinput), so the rest of the system sees a normal keyboard.
   * For the chosen keys only (default: E), a press that arrives within
     --threshold-ms of that key's previous release is treated as chatter
@@ -16,8 +16,12 @@ Safety
   * Every other key, and the laptop's built-in keyboard, are untouched.
   * If this program stops or crashes for any reason, the kernel releases
     the grab automatically and the keyboard works exactly as before.
-  * Caps/Num lock LEDs are forwarded back to the real keyboard.
   * Unplugging/replugging the dongle is handled (rescans every 2 s).
+  * Nothing is ever sent TO the keyboard. Caps/Num lock LEDs are not
+    mirrored: the old two-way LED mirroring (real keyboard <-> virtual
+    keyboard) could loop while the keyboard was asleep, flooding the
+    kernel log with "control queue full" until the disk filled up.
+  * Silent by default: nothing is logged unless --verbose is given.
 
 Modes
   chatter-fix.py                 run the filter (needs root)
@@ -83,11 +87,17 @@ class Debouncer:
         return code not in self.suppressed
 
 
+# Event types never copied to the virtual keyboard. SYN is implicit, FF
+# needs a feedback loop we don't provide, REP would make the kernel add
+# its own repeats on top of the forwarded ones, and LED is left out so the
+# desktop has no LEDs to write to the virtual keyboard and the real
+# keyboard's LED echoes are never fed back in.
+SKIPPED_TYPES = (ecodes.EV_SYN, ecodes.EV_FF, ecodes.EV_REP, ecodes.EV_LED)
+
+
 def capabilities_for_virtual(dev):
     caps = dev.capabilities(absinfo=True)
-    # SYN is implicit, FF needs a feedback loop we don't provide, and REP
-    # would make the kernel add its own repeats on top of the forwarded ones.
-    for t in (ecodes.EV_SYN, ecodes.EV_FF, ecodes.EV_REP):
+    for t in SKIPPED_TYPES:
         caps.pop(t, None)
     return caps
 
@@ -108,21 +118,15 @@ class FilteredDevice:
                          phys="chatter-fix/" + (dev.phys or dev.path))
         wait_until_no_keys_held(dev)
         dev.grab()
-        # The virtual device's own node is where the desktop writes
-        # Caps/Num lock LED changes; we read them back to forward them.
-        self.virtual = self.ui.device
 
     def pump_input(self):
         for ev in self.dev.read():
+            if ev.type == ecodes.EV_LED:
+                continue
             if ev.type == ecodes.EV_KEY and not self.debouncer.allow(
                     ev.code, ev.value, ev.timestamp()):
                 continue
             self.ui.write_event(ev)
-
-    def pump_leds(self):
-        for ev in self.virtual.read():
-            if ev.type == ecodes.EV_LED:
-                self.dev.set_led(ev.code, ev.value)
 
     def close(self):
         for action in (self.dev.ungrab, self.dev.close, self.ui.close):
@@ -159,11 +163,10 @@ def run_filter(keys, threshold_s):
         fd = active.pop(path, None)
         if fd is None:
             return
-        for f in (fd.dev, fd.virtual):
-            try:
-                sel.unregister(f)
-            except (KeyError, ValueError, OSError):
-                pass
+        try:
+            sel.unregister(fd.dev)
+        except (KeyError, ValueError, OSError):
+            pass
         fd.close()
         log.info("released %s", path)
 
@@ -183,10 +186,7 @@ def run_filter(keys, threshold_s):
                 continue
             failed_paths.discard(dev.path)
             active[dev.path] = fd
-            sel.register(fd.dev, selectors.EVENT_READ, ("input", dev.path))
-            if fd.virtual is not None:
-                sel.register(fd.virtual, selectors.EVENT_READ,
-                             ("leds", dev.path))
+            sel.register(fd.dev, selectors.EVENT_READ, dev.path)
             log.info("filtering %s (%s)", dev.path, dev.name)
 
     log.info("keys: %s, threshold: %.0f ms",
@@ -199,15 +199,12 @@ def run_filter(keys, threshold_s):
                 rescan()
                 next_scan = now + RESCAN_SECONDS
             for key, _ in sel.select(timeout=RESCAN_SECONDS):
-                kind, path = key.data
+                path = key.data
                 fd = active.get(path)
                 if fd is None:
                     continue
                 try:
-                    if kind == "input":
-                        fd.pump_input()
-                    else:
-                        fd.pump_leds()
+                    fd.pump_input()
                 except BlockingIOError:
                     pass
                 except OSError as e:  # dongle unplugged, etc.
@@ -267,11 +264,14 @@ def main():
                    help="drop a press this soon after the previous release (default: 50)")
     p.add_argument("--monitor", action="store_true",
                    help="only print timings, don't filter")
-    p.add_argument("--verbose", action="store_true", help="log every dropped press")
+    p.add_argument("--verbose", action="store_true",
+                   help="log what the filter does (silent otherwise)")
     args = p.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(message)s")
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(message)s")
+    else:
+        logging.disable(logging.CRITICAL)
     try:
         keys = parse_keys(args.keys)
     except argparse.ArgumentTypeError as e:

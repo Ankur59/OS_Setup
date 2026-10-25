@@ -11,6 +11,9 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+StandardOutput=null
+StandardError=null
+LogLevelMax=warning
 
 [Install]
 WantedBy=multi-user.target
